@@ -1,6 +1,6 @@
 #!/bin/bash
-# Roblox舞蹈动画转换工具 (全自动修复版)
-# 修复问题: 1. 颜色代码污染路径 2. 拖拽文件处理
+# Roblox舞蹈动画转换工具 (终极修复版)
+# 彻底解决颜色代码污染路径问题
 
 # --- 配置 ---
 OUTPUT_DIR="$HOME/Desktop/Roblox_Animation_Export"
@@ -15,8 +15,8 @@ NC='\033[0m' # No Color
 
 # --- 清理路径函数 ---
 clean_path() {
-    # 去除ANSI颜色代码和引号
-    echo "$1" | sed -e 's/\x1B\[[0-9;]*[mGK]//g' -e "s/^ *'//" -e "s/' *$//" -e 's/ *$//'
+    # 去除所有ANSI颜色代码和多余字符
+    echo "$1" | sed -e 's/\x1B\[[0-9;]*[mGK]//g' -e "s/^ *'//" -e "s/' *$//" -e 's/ *$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
 # --- 函数：检查并安装依赖 ---
@@ -54,10 +54,11 @@ install_dependencies() {
 
 # --- 函数：手动选择文件 ---
 select_file() {
-    echo -e "${YELLOW}[2/3] 选择视频文件:${NC}"
-    echo -e "请选择输入方式:"
-    echo -e "  1. 拖拽文件到终端窗口后按 Enter"
-    echo -e "  2. 手动输入文件路径"
+    # 使用普通提示避免颜色代码污染
+    echo "[2/3] 选择视频文件:"
+    echo "请选择输入方式:"
+    echo "  1. 拖拽文件到终端窗口后按 Enter"
+    echo "  2. 手动输入文件路径"
     read -p "您的选择 [1/2]: " choice
 
     case "$choice" in
@@ -70,14 +71,14 @@ select_file() {
             file_path=$(clean_path "$raw_path")
             ;;
         *)
-            echo -e "${RED}无效输入！${NC}"
+            echo "无效输入！"
             exit 1
             ;;
     esac
 
     # 验证文件
     if [ ! -f "$file_path" ]; then
-        echo -e "${RED}错误: 文件不存在: ${file_path}${NC}"
+        echo "错误: 文件不存在: ${file_path}"
         exit 1
     fi
     echo "$file_path"
@@ -90,11 +91,16 @@ process_animation() {
 
     # 提取帧
     mkdir -p "$OUTPUT_DIR/frames"
+    
+    # 显示实际使用的路径
+    echo "使用路径: $input_file"
+    
     ffmpeg -hide_banner -i "$input_file" -vf fps=30 "$OUTPUT_DIR/frames/frame_%04d.png" || {
         echo -e "${RED}错误: 视频提取失败！可能原因:${NC}"
         echo -e "${RED}1. 文件路径包含特殊字符${NC}"
         echo -e "${RED}2. 视频格式不受支持${NC}"
         echo -e "${RED}3. 文件已损坏${NC}"
+        echo "尝试路径: $input_file"
         exit 1
     }
 
