@@ -1,6 +1,6 @@
 #!/bin/bash
-# Roblox舞蹈动画转换工具 (全自动版)
-# 功能: 检查依赖 → 安装缺失工具 → 选择视频 → 输出FBX动画
+# Roblox舞蹈动画转换工具 (全自动修复版)
+# 修复问题: 1. 颜色代码污染路径 2. 拖拽文件处理
 
 # --- 配置 ---
 OUTPUT_DIR="$HOME/Desktop/Roblox_Animation_Export"
@@ -12,6 +12,12 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# --- 清理路径函数 ---
+clean_path() {
+    # 去除ANSI颜色代码和引号
+    echo "$1" | sed -e 's/\x1B\[[0-9;]*[mGK]//g' -e "s/^ *'//" -e "s/' *$//" -e 's/ *$//'
+}
 
 # --- 函数：检查并安装依赖 ---
 install_dependencies() {
@@ -56,11 +62,12 @@ select_file() {
 
     case "$choice" in
         1)
-            read -p "拖拽文件 → " file_path
-            file_path=$(echo "$file_path" | sed -e "s/^ *'//" -e "s/' *$//") # 清理路径
+            read -p "拖拽文件 → " raw_path
+            file_path=$(clean_path "$raw_path")
             ;;
         2)
-            read -p "输入文件路径: " file_path
+            read -p "输入文件路径: " raw_path
+            file_path=$(clean_path "$raw_path")
             ;;
         *)
             echo -e "${RED}无效输入！${NC}"
@@ -83,8 +90,11 @@ process_animation() {
 
     # 提取帧
     mkdir -p "$OUTPUT_DIR/frames"
-    ffmpeg -i "$input_file" -vf fps=30 "$OUTPUT_DIR/frames/frame_%04d.png" || {
-        echo -e "${RED}错误: 视频提取失败！${NC}"
+    ffmpeg -hide_banner -i "$input_file" -vf fps=30 "$OUTPUT_DIR/frames/frame_%04d.png" || {
+        echo -e "${RED}错误: 视频提取失败！可能原因:${NC}"
+        echo -e "${RED}1. 文件路径包含特殊字符${NC}"
+        echo -e "${RED}2. 视频格式不受支持${NC}"
+        echo -e "${RED}3. 文件已损坏${NC}"
         exit 1
     }
 
@@ -107,6 +117,7 @@ install_dependencies
 
 # 2. 选择文件
 VIDEO_PATH=$(select_file)
+echo -e "${GREEN}已选择文件: ${VIDEO_PATH}${NC}"
 
 # 3. 处理动画
 mkdir -p "$OUTPUT_DIR"
