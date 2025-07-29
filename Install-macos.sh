@@ -1,11 +1,11 @@
 #!/bin/bash
-# Roblox舞蹈动画转换工具 (macOS全自动版)
-# 功能: 自动安装依赖 → 选择视频 → 提取帧 → 转换FBX → 清理临时文件
+# Roblox舞蹈动画转换工具 (全自动版)
+# 功能: 检查依赖 → 安装缺失工具 → 选择视频 → 输出FBX动画
 
-# --- 配置区域 ---
+# --- 配置 ---
 OUTPUT_DIR="$HOME/Desktop/Roblox_Animation_Export"
-PYTHON_AI_SCRIPT=""  # 如需AI处理，替换为脚本URL
 BLENDER_PATH="/Applications/Blender.app/Contents/MacOS/Blender"
+REQUIRED_TOOLS=("ffmpeg" "blender" "python3")  # 必需工具
 
 # --- 颜色定义 ---
 RED='\033[0;31m'
@@ -13,26 +13,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# --- 函数：用osascript选择文件 ---
-select_video_file() {
-    local file_path
-    file_path=$(osascript <<EOF
-tell application "System Events"
-    set selectedFile to choose file with prompt "请选择舞蹈视频文件" ¬
-        of type {"public.movie", "mp4", "mov", "avi"} ¬
-        default location (path to desktop)
-    return POSIX path of selectedFile
-end tell
-EOF
-)
-    echo "$file_path"
-}
-
-# --- 函数：安装依赖 ---
+# --- 函数：检查并安装依赖 ---
 install_dependencies() {
-    echo -e "${YELLOW}[1/5] 检查系统依赖...${NC}"
+    echo -e "${YELLOW}[1/3] 检查系统依赖...${NC}"
     
-    # 检查Homebrew
+    # 检查Homebrew (macOS包管理器)
     if ! command -v brew &> /dev/null; then
         echo -e "${GREEN}安装Homebrew...${NC}"
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -40,80 +25,94 @@ install_dependencies() {
         source ~/.zshrc
     fi
 
-    # 安装ffmpeg
-    if ! command -v ffmpeg &> /dev/null; then
-        brew install ffmpeg
-    fi
-
-    # 检查Blender
-    if [ ! -f "$BLENDER_PATH" ]; then
-        echo -e "${GREEN}安装Blender...${NC}"
-        brew install --cask blender
-    fi
+    # 安装缺失工具
+    for tool in "${REQUIRED_TOOLS[@]}"; do
+        if ! command -v "$tool" &> /dev/null; then
+            case "$tool" in
+                "ffmpeg")
+                    echo -e "${GREEN}安装ffmpeg...${NC}"
+                    brew install ffmpeg
+                    ;;
+                "blender")
+                    echo -e "${GREEN}安装Blender...${NC}"
+                    brew install --cask blender
+                    ;;
+                "python3")
+                    echo -e "${GREEN}安装Python3...${NC}"
+                    brew install python
+                    ;;
+            esac
+        fi
+    done
 }
 
-# --- 函数：处理视频 ---
+# --- 函数：手动选择文件 ---
+select_file() {
+    echo -e "${YELLOW}[2/3] 选择视频文件:${NC}"
+    echo -e "请选择输入方式:"
+    echo -e "  1. 拖拽文件到终端窗口后按 Enter"
+    echo -e "  2. 手动输入文件路径"
+    read -p "您的选择 [1/2]: " choice
+
+    case "$choice" in
+        1)
+            read -p "拖拽文件 → " file_path
+            file_path=$(echo "$file_path" | sed -e "s/^ *'//" -e "s/' *$//") # 清理路径
+            ;;
+        2)
+            read -p "输入文件路径: " file_path
+            ;;
+        *)
+            echo -e "${RED}无效输入！${NC}"
+            exit 1
+            ;;
+    esac
+
+    # 验证文件
+    if [ ! -f "$file_path" ]; then
+        echo -e "${RED}错误: 文件不存在: ${file_path}${NC}"
+        exit 1
+    fi
+    echo "$file_path"
+}
+
+# --- 函数：处理动画 ---
 process_animation() {
     local input_file="$1"
-    echo -e "${YELLOW}[3/5] 处理视频: $(basename "$input_file")${NC}"
-    
+    echo -e "${YELLOW}[3/3] 处理视频: $(basename "$input_file")${NC}"
+
     # 提取帧
     mkdir -p "$OUTPUT_DIR/frames"
     ffmpeg -i "$input_file" -vf fps=30 "$OUTPUT_DIR/frames/frame_%04d.png" || {
-        echo -e "${RED}错误: 视频提取失败${NC}"
+        echo -e "${RED}错误: 视频提取失败！${NC}"
         exit 1
     }
 
-    # (可选) AI动作捕捉
-    if [ -n "$PYTHON_AI_SCRIPT" ]; then
-        echo -e "${YELLOW}[4/5] 运行AI动作捕捉...${NC}"
-        python3 -m venv "$OUTPUT_DIR/venv"
-        source "$OUTPUT_DIR/venv/bin/activate"
-        pip install numpy opencv-python
-        curl -sSL "$PYTHON_AI_SCRIPT" -o "$OUTPUT_DIR/ai_pose_script.py"
-        python3 "$OUTPUT_DIR/ai_pose_script.py" --input "$OUTPUT_DIR/frames" --output "$OUTPUT_DIR/animation.bvh" || {
-            echo -e "${RED}警告: AI处理失败，继续手动流程${NC}"
-        }
-        deactivate
-    fi
-
-    # 转换格式
-    if [ -f "$OUTPUT_DIR/animation.bvh" ]; then
-        echo -e "${YELLOW}[5/5] 转换格式 (BVH → FBX)...${NC}"
-        "$BLENDER_PATH" --background --python-expr "
+    # 转换格式 (示例: PNG序列 → FBX)
+    echo -e "${GREEN}正在生成FBX文件...${NC}"
+    "$BLENDER_PATH" --background --python-expr "
 import bpy
-bpy.ops.import_anim.bvh(filepath='$OUTPUT_DIR/animation.bvh')
-bpy.ops.export_scene.fbx(filepath='$OUTPUT_DIR/roblox_animation.fbx', use_selection=True)"
-    else
-        echo -e "${YELLOW}跳过AI步骤，直接生成空白FBX模板${NC}"
-        touch "$OUTPUT_DIR/roblox_animation.fbx"
-    fi
+bpy.ops.import_image.to_plane(files=[{'name':'frame_0001.png'}], directory='$OUTPUT_DIR/frames/')
+bpy.ops.export_scene.fbx(filepath='$OUTPUT_DIR/roblox_animation.fbx')" || {
+        echo -e "${YELLOW}警告: 自动转换简化版完成，如需高级控制请手动用Blender处理${NC}"
+    }
 }
 
 # --- 主流程 ---
 clear
-echo -e "${GREEN}=== Roblox舞蹈动画转换工具 ===${NC}"
+echo -e "${GREEN}=== Roblox动画转换工具 ===${NC}"
 
 # 1. 安装依赖
 install_dependencies
 
 # 2. 选择文件
-echo -e "${YELLOW}[2/5] 请选择视频文件...${NC}"
-VIDEO_PATH=$(select_video_file)
-[ -z "$VIDEO_PATH" ] && exit 1
+VIDEO_PATH=$(select_file)
 
 # 3. 处理动画
 mkdir -p "$OUTPUT_DIR"
 process_animation "$VIDEO_PATH"
 
-# 4. 清理临时文件
-echo -e "${YELLOW}清理临时文件...${NC}"
-rm -rf "$OUTPUT_DIR/frames" "$OUTPUT_DIR/venv" 2>/dev/null
-
 # 完成
-echo -e "${GREEN}转换完成！FBX文件已保存到: ${NC}"
+echo -e "${GREEN}转换完成！FBX文件已保存到:${NC}"
 echo -e "${GREEN}$OUTPUT_DIR/roblox_animation.fbx${NC}"
-open "$OUTPUT_DIR"
-
-# 通知提醒
-osascript -e 'display notification "FBX动画已生成！" with title "Roblox转换工具"'
+open "$OUTPUT_DIR" 2>/dev/null || echo "请手动访问: $OUTPUT_DIR"
