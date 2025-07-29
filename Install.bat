@@ -6,6 +6,7 @@ setlocal enabledelayedexpansion
 fltmc >nul 2>&1 || (
     echo 请求管理员权限...
     powershell Start-Process -Verb RunAs -FilePath "cmd" -ArgumentList "/c cd /d "%~dp0" & "%~f0""
+    pause
     exit /b
 )
 
